@@ -9,12 +9,14 @@
 #include <dt-bindings/gpio/gpio.h>
 
 / {
-	model = "OrangePi 3";
-	compatible = "xunlong,orangepi-3", "allwinner,sun50i-h6";
+	model = "OrangePi 3 LTS";
+	compatible = "xunlong,orangepi-3-lts", "allwinner,sun50i-h6";
 
 	aliases {
 		serial0 = &uart0;
 		serial1 = &uart1;
+		// serial9 = &r_uart;
+		ethernet0 = &emac;
 	};
 
 	chosen {
@@ -43,16 +45,15 @@
 	leds {
 		compatible = "gpio-leds";
 
-		led-0 {
-			label = "orangepi:red:power";
-			gpios = <&r_pio 0 4 GPIO_ACTIVE_HIGH>; /* PL4 */
+		status {
+			label = "green-led";
+			gpios = <&r_pio 0 7 GPIO_ACTIVE_HIGH>; /* PL7 */
 			default-state = "on";
 		};
 
-		led-1 {
-			label = "orangepi:green:status";
-			gpios = <&r_pio 0 7 GPIO_ACTIVE_HIGH>; /* PL7 */
-			default-state = "on";
+		power {
+			label = "red-led";
+			gpios = <&r_pio 0 4 GPIO_ACTIVE_HIGH>; /* PL4 */
 		};
 	};
 
@@ -65,14 +66,24 @@
 		regulator-always-on;
 	};
 
+	reg_gmac_3v3: gmac-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc-gmac-3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+		gpio = <&pio 3 6 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+	};
+
 	reg_vcc33_wifi: vcc33-wifi {
 		/* Always on 3.3V regulator for WiFi and BT */
 		compatible = "regulator-fixed";
 		regulator-name = "vcc33-wifi";
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
-		regulator-always-on;
-		vin-supply = <&reg_vcc5v>;
+		enable-active-high;
+		gpio = <&pio 7 7 GPIO_ACTIVE_HIGH>; /* PH7 */
 	};
 
 	reg_vcc_wifi_io: vcc-wifi-io {
@@ -129,6 +140,32 @@
 	};
 };
 
+&emac {
+	pinctrl-names = "default";
+	pinctrl-0 = <&ext_rgmii_pins>;
+	phy-mode = "rgmii-id";
+	phy-handle = <&ext_rgmii_phy>;
+	phy-supply = <&reg_gmac_3v3>;
+	allwinner,rx-delay-ps = <1500>;
+	allwinner,tx-delay-ps = <700>;
+	status = "okay";
+};
+
+&mdio {
+	ext_rgmii_phy: ethernet-phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <1>;
+
+		reset-gpios = <&pio 3 14 GPIO_ACTIVE_LOW>; /* PD14 */
+		reset-assert-us = <15000>;
+		reset-deassert-us = <40000>;
+	};
+};
+
+&i2s1 {
+	status = "okay";
+};
+
 &mmc0 {
 	vmmc-supply = <&reg_cldo1>;
 	cd-gpios = <&pio 5 6 GPIO_ACTIVE_LOW>; /* PF6 */
@@ -143,22 +180,17 @@
 	bus-width = <4>;
 	non-removable;
 	status = "okay";
-
-	xradio: sdio-wifi@1 {
-		reg = <1>;
-		compatible = "xradio,xr819";
-		interrupt-parent = <&r_pio>;
-		interrupts = <1 0 IRQ_TYPE_LEVEL_LOW>; /* PM0 */
-		interrupt-names = "host-wake";
-	};
 };
 
 &mmc2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&mmc2_pins>;
 	vmmc-supply = <&reg_cldo1>;
 	vqmmc-supply = <&reg_bldo2>;
-	cap-mmc-hw-reset;
-	non-removable;
 	bus-width = <8>;
+	non-removable;
+	cap-mmc-hw-reset;
+	mmc-hs200-1_8v;
 	status = "okay";
 };
 
@@ -176,21 +208,16 @@
 	vcc-pg-supply = <&reg_vcc_wifi_io>;
 };
 
-&r_ir {
-	status = "okay";
-};
-
-&r_rsb {
+&r_i2c {
 	status = "okay";
 
-	axp805: pmic@745 {
+	axp805: pmic@36 {
 		compatible = "x-powers,axp805", "x-powers,axp806";
-		reg = <0x745>;
+		reg = <0x36>;
 		interrupt-parent = <&r_intc>;
 		interrupts = <GIC_SPI 96 IRQ_TYPE_LEVEL_LOW>;
 		interrupt-controller;
 		#interrupt-cells = <1>;
-		clock-frequency = <400000>;
 		x-powers,self-working-mode;
 		vina-supply = <&reg_vcc5v>;
 		vinb-supply = <&reg_vcc5v>;
@@ -210,9 +237,11 @@
 			};
 
 			reg_aldo2: aldo2 {
+				regulator-always-on;
 				regulator-min-microvolt = <3300000>;
 				regulator-max-microvolt = <3300000>;
 				regulator-name = "vcc33-audio-tv-ephy-mac";
+				regulator-enable-ramp-delay = <100000>;
 			};
 
 			/* ALDO3 is shorted to CLDO1 */
@@ -237,8 +266,11 @@
 				regulator-name = "vcc-efuse-pcie-hdmi-pc";
 			};
 
-			bldo3 {
-				/* unused */
+			reg_bldo3: bldo3 {
+				regulator-always-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcc-wifi-io-pm-pg";
 			};
 
 			bldo4 {
@@ -278,8 +310,8 @@
 
 			reg_dcdcd: dcdcd {
 				regulator-always-on;
-				regulator-min-microvolt = <960000>;
-				regulator-max-microvolt = <960000>;
+				regulator-min-microvolt = <980000>;
+				regulator-max-microvolt = <980000>;
 				regulator-name = "vdd-sys";
 			};
 
@@ -297,9 +329,39 @@
 	};
 };
 
+&pwm {
+	status = "okay";
+};
+
+// &ac200_pwm_clk {
+// 	status = "okay";
+// };
+
+// &i2s3 {
+// 	status = "okay";
+// };
+
+// &i2c3 {
+// 	status = "okay";
+// };
+
+&r_ir {
+	status = "okay";
+};
+
 &rtc {
 	clocks = <&ext_osc32k>;
 };
+
+// &sound_hdmi {
+// 	status = "okay";
+// };
+
+// &sound_ac200 {
+//         status = "okay";
+// };
+
+/delete-node/ &spi0;
 
 &uart0 {
 	pinctrl-names = "default";
@@ -307,22 +369,11 @@
 	status = "okay";
 };
 
-/* There's the BT part of the AP6256 connected to that UART */
 &uart1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart1_pins>, <&uart1_rts_cts_pins>;
 	uart-has-rtscts;
-	status = "okay";
-
-	bluetooth {
-		compatible = "brcm,bcm4345c5";
-		clocks = <&rtc 1>;
-		clock-names = "lpo";
-		device-wakeup-gpios = <&r_pio 1 2 GPIO_ACTIVE_HIGH>; /* PM2 */
-		host-wakeup-gpios = <&r_pio 1 1 GPIO_ACTIVE_HIGH>; /* PM1 */
-		shutdown-gpios = <&r_pio 1 4 GPIO_ACTIVE_HIGH>; /* PM4 */
-		max-speed = <1500000>;
-	};
+	status = "disabled";
 };
 
 &usb2otg {
