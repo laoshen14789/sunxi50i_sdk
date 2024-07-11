@@ -10,7 +10,7 @@
  */
 #ifndef XRADIO_DEBUG_H_INCLUDED
 #define XRADIO_DEBUG_H_INCLUDED
-
+#include <linux/printk.h>
 /* debug classes */
 #define XRADIO_DBG_ALWY   0x01		/* general - always */
 #define XRADIO_DBG_ERROR  0x02		/* error */
