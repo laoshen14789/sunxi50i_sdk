@@ -170,9 +170,14 @@ int driver_register(struct device_driver *drv)
 
 	ret = bus_add_driver(drv);
 	if (ret)
+	{
+		pr_err("bus_add_driver");
 		return ret;
+	}
+		
 	ret = driver_add_groups(drv, drv->groups);
 	if (ret) {
+		pr_err("driver_add_groups");
 		bus_remove_driver(drv);
 		return ret;
 	}

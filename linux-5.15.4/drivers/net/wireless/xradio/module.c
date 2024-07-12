@@ -13,6 +13,7 @@ MODULE_ALIAS("xradio_core");
 static int __init xradio_core_entry(void)
 {
 	int ret = 0;
+	xr_printk(XRADIO_DBG_MSG, "xradio_core_entry");
 	ret = xradio_sdio_register();
 	return ret;
 }

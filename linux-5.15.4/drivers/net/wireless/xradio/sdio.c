@@ -26,10 +26,14 @@
 /* sdio vendor id and device id*/
 #define SDIO_VENDOR_ID_XRADIO 0x0020
 #define SDIO_DEVICE_ID_XRADIO 0x2281
+#define SDIO_VENDOR_ID_XR829 0x0A9E
+#define SDIO_DEVICE_ID_XR829 0x2282
+
 static const struct sdio_device_id xradio_sdio_ids[] = {
-	{ SDIO_DEVICE(SDIO_VENDOR_ID_XRADIO, SDIO_DEVICE_ID_XRADIO) },
-	//{ SDIO_DEVICE(SDIO_ANY_ID, SDIO_ANY_ID) },
-	{ /* end: all zeroes */			},
+	{SDIO_DEVICE(SDIO_VENDOR_ID_XRADIO, SDIO_DEVICE_ID_XRADIO)},
+	{SDIO_DEVICE(SDIO_VENDOR_ID_XR829, SDIO_DEVICE_ID_XR829)},
+	/*{ SDIO_DEVICE(SDIO_ANY_ID, SDIO_ANY_ID) }, */
+	{ /* end: all zeroes */ },
 };
 
 /* sbus_ops implemetation */
