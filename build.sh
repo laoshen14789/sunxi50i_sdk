@@ -59,6 +59,13 @@ build_rootfs () {
 }
 
 build_driver () {
+    build_kernel
+
+    if [ ! -d $rootdir/output/ko ];then
+        mkdir $rootdir/output/ko
+    fi
+
+    find $kernel_src -type f -name "*.ko" -exec cp {} $rootdir/output/ko \;
     echo "build_driver"
 }
 
