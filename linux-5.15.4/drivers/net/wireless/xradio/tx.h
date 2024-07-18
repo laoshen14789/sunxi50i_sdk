@@ -27,7 +27,6 @@ struct tx_policy {
 		__le32 tbl[3];
 		u8 raw[12];
 	};
-	u8  defined;		/* TODO: u32 or u8, profile and select best */
 	u8  usage_count;	/* --// -- */
 	u8  retry_count;	/* --// -- */
 	u8  uploaded;
@@ -55,12 +54,6 @@ struct tx_policy_cache {
  */
 void tx_policy_init(struct xradio_common *hw_priv);
 void tx_policy_upload_work(struct work_struct *work);
-
-/* ******************************************************************** */
-/* RX implementation							*/
-
-void xradio_check_go_neg_conf_success(struct xradio_common *hw_priv,
-						u8 *action);
 
 /* ******************************************************************** */
 /* TX implementation							*/

@@ -29,10 +29,17 @@ int xradio_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 void xradio_sta_notify(struct ieee80211_hw *dev, struct ieee80211_vif *vif,
 		       enum sta_notify_cmd notify_cmd,
 		       struct ieee80211_sta *sta);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0))
+void xradio_bss_info_changed(struct ieee80211_hw *dev,
+			     struct ieee80211_vif *vif,
+			     struct ieee80211_bss_conf *info,
+			     u64 changed);
+#else
 void xradio_bss_info_changed(struct ieee80211_hw *dev,
 			     struct ieee80211_vif *vif,
 			     struct ieee80211_bss_conf *info,
 			     u32 changed);
+#endif
 int xradio_ampdu_action(struct ieee80211_hw *hw,
 			struct ieee80211_vif *vif,
 			struct ieee80211_ampdu_params *params);
@@ -46,7 +53,11 @@ void xradio_set_tim_work(struct work_struct *work);
 void xradio_set_cts_work(struct work_struct *work);
 void xradio_multicast_start_work(struct work_struct *work);
 void xradio_multicast_stop_work(struct work_struct *work);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0))
 void xradio_mcast_timeout(struct timer_list *t);
+#else
+void xradio_mcast_timeout(unsigned long arg);
+#endif
 int xradio_find_link_id(struct xradio_vif *priv, const u8 *mac);
 int xradio_alloc_link_id(struct xradio_vif *priv, const u8 *mac);
 void xradio_link_id_work(struct work_struct *work);

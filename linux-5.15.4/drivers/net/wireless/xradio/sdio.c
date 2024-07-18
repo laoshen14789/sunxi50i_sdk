@@ -10,14 +10,13 @@
  */
 
 #include <linux/module.h>
+#include <linux/interrupt.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/sdio_func.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/sdio.h>
-// #include <asm/mach-types.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
-#include <linux/interrupt.h>
 
 #include "xradio.h"
 #include "sdio.h"
@@ -26,32 +25,44 @@
 /* sdio vendor id and device id*/
 #define SDIO_VENDOR_ID_XRADIO 0x0020
 #define SDIO_DEVICE_ID_XRADIO 0x2281
-#define SDIO_VENDOR_ID_XR829 0x0A9E
-#define SDIO_DEVICE_ID_XR829 0x2282
-
 static const struct sdio_device_id xradio_sdio_ids[] = {
-	{SDIO_DEVICE(SDIO_VENDOR_ID_XRADIO, SDIO_DEVICE_ID_XRADIO)},
-	{SDIO_DEVICE(SDIO_VENDOR_ID_XR829, SDIO_DEVICE_ID_XR829)},
-	/*{ SDIO_DEVICE(SDIO_ANY_ID, SDIO_ANY_ID) }, */
-	{ /* end: all zeroes */ },
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_XRADIO, SDIO_DEVICE_ID_XRADIO) },
+	{ SDIO_DEVICE(SDIO_ANY_ID, SDIO_ANY_ID) },
+	{ /* end: all zeroes */			},
 };
 
 /* sbus_ops implemetation */
 int sdio_data_read(struct xradio_common* self, unsigned int addr,
                           void *dst, int count)
 {
-	int ret = sdio_memcpy_fromio(self->sdio_func, dst, addr, count);
-//	printk("sdio_memcpy_fromio 0x%x:%d ret %d\n", addr, count, ret);
-//	print_hex_dump_bytes("sdio read ", 0, dst, min(count,32));
+	int ret;
+
+	switch (count) {
+	case 4:
+		*((u32 *)dst) = sdio_readl(self->sdio_func, addr, &ret);
+		break;
+	default:
+		ret = sdio_memcpy_fromio(self->sdio_func, dst, addr, count);
+		break;
+	}
+
 	return ret;
 }
 
 int sdio_data_write(struct xradio_common* self, unsigned int addr,
                            const void *src, int count)
 {
-	int ret = sdio_memcpy_toio(self->sdio_func, addr, (void *)src, count);
-//	printk("sdio_memcpy_toio 0x%x:%d ret %d\n", addr, count, ret);
-//	print_hex_dump_bytes("sdio write", 0, src, min(count,32));
+	int ret;
+
+	switch (count) {
+	case 4:
+		sdio_writel(self->sdio_func, *((u32 *)src), addr, &ret);
+		break;
+	default:
+		ret = sdio_memcpy_toio(self->sdio_func, addr, (void *)src, count);
+		break;
+	}
+
 	return ret;
 }
 
@@ -117,7 +128,7 @@ int sdio_pm(struct xradio_common *self, bool  suspend)
 		/* Notify SDIO that XRADIO will remain powered during suspend */
 		ret = sdio_set_host_pm_flags(self->sdio_func, MMC_PM_KEEP_POWER);
 		if (ret)
-			xr_printk(XRADIO_DBG_WARN, "SDIO: Error setting SDIO pm flags #%i\n", ret);
+			dev_dbg(&self->sdio_func->dev, "Error setting SDIO pm flags: %i\n", ret);
 	}
 
 	return ret;
@@ -134,7 +145,6 @@ static int xradio_probe_of(struct sdio_func *func)
 	struct device_node *np = dev->of_node;
 	const struct of_device_id *of_id;
 	int irq;
-	int ret;
 
 	of_id = of_match_node(xradio_sdio_of_match_table, np);
 	if (!of_id)
@@ -144,29 +154,23 @@ static int xradio_probe_of(struct sdio_func *func)
 
 	irq = irq_of_parse_and_map(np, 0);
 	if (!irq) {
-		xr_printk(XRADIO_DBG_ERROR, "SDIO: No irq in platform data\n");
+		dev_err(dev, "No irq in platform data\n");
 		return -EINVAL;
 	}
 
-	ret = devm_request_irq(dev, irq, sdio_irq_handler, 0, "xradio", func);
-	if (ret) {
-		xr_printk(XRADIO_DBG_ERROR, "SDIO: Failed to request irq_wakeup.\n");
-		return -EINVAL;
-	}
-
-	return 0;
+	return devm_request_irq(dev, irq, sdio_irq_handler, 0, "xradio", func);
 }
 
 /* Probe Function to be called by SDIO stack when device is discovered */
 static int sdio_probe(struct sdio_func *func,
                       const struct sdio_device_id *id)
 {
-	xr_printk(XRADIO_DBG_ALWY, "XR819 device discovered\n");
-	xr_printk(XRADIO_DBG_MSG, "SDIO: clock  = %d\n", func->card->host->ios.clock);
-	xr_printk(XRADIO_DBG_MSG, "SDIO: class  = %x\n", func->class);
-	xr_printk(XRADIO_DBG_MSG, "SDIO: vendor = 0x%04x\n", func->vendor);
-	xr_printk(XRADIO_DBG_MSG, "SDIO: device = 0x%04x\n", func->device);
-	xr_printk(XRADIO_DBG_MSG, "SDIO: fctn#  = 0x%04x\n", func->num);
+	dev_dbg(&func->dev, "XRadio Device:sdio clk=%d\n",
+	            func->card->host->ios.clock);
+	dev_dbg(&func->dev, "sdio func->class=%x\n", func->class);
+	dev_dbg(&func->dev, "sdio_vendor: 0x%04x\n", func->vendor);
+	dev_dbg(&func->dev, "sdio_device: 0x%04x\n", func->device);
+	dev_dbg(&func->dev, "Function#: 0x%04x\n",   func->num);
 
 #if 0  //for odly and sdly debug.
 {
@@ -177,7 +181,7 @@ static int sdio_probe(struct sdio_func *func,
 	sdio_param &= ~(0xf<<20);
 	sdio_param |= s_dly<<20;
 	writel(sdio_param, __io_address(0x01c20088));
-	xr_printk(XRADIO_DBG_ALWY, "%s: 0x01c20088=0x%08x\n", __func__, sdio_param);
+	sbus_printk(XRADIO_DBG_ALWY, "%s: 0x01c20088=0x%08x\n", __func__, sdio_param);
 }
 #endif
 
@@ -192,17 +196,22 @@ static int sdio_probe(struct sdio_func *func,
 
 	xradio_core_init(func);
 
-	try_module_get(func->dev.driver->owner);
 	return 0;
 }
 /* Disconnect Function to be called by SDIO stack when
  * device is disconnected */
 static void sdio_remove(struct sdio_func *func)
 {
+	struct mmc_card *card = func->card;
+	xradio_core_deinit(func);
 	sdio_claim_host(func);
 	sdio_disable_func(func);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
+	mmc_hw_reset(card);
+#else
+	mmc_hw_reset(card->host);
+#endif
 	sdio_release_host(func);
-	module_put(func->dev.driver->owner);
 }
 
 static int sdio_suspend(struct device *dev)

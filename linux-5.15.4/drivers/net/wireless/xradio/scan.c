@@ -54,8 +54,13 @@ static void xradio_remove_wps_p2p_ie(struct wsm_template_frame *frame)
 static int xradio_scan_start(struct xradio_vif *priv, struct wsm_scan *scan)
 {
 	int ret, i;
+#ifdef FPGA_SETUP
 	int tmo = 5000;
+#else
+	int tmo = 5000;
+#endif
 	struct xradio_common *hw_priv = xrwl_vifpriv_to_hwpriv(priv);
+
 
 	for (i = 0; i < scan->numOfChannels; ++i)
 		tmo += scan->ch[i].maxChannelTime + 10;
@@ -101,9 +106,8 @@ int xradio_hw_scan(struct ieee80211_hw *hw,
 	struct wsm_template_frame frame = {
 		.frame_type = WSM_FRAME_TYPE_PROBE_REQUEST,
 	};
-	int i, ret;
+	int ret, i;
 
-	scan_printk(XRADIO_DBG_OPS, "%s\n", __func__);
 	/* Scan when P2P_GO corrupt firmware MiniAP mode */
 	if (priv->join_status == XRADIO_JOIN_STATUS_AP) {
 		scan_printk(XRADIO_DBG_WARN,"%s, can't scan in AP mode!\n", __func__);
@@ -141,22 +145,21 @@ int xradio_hw_scan(struct ieee80211_hw *hw,
 	}
 
 	if (req->n_ssids > hw->wiphy->max_scan_ssids){
-		scan_printk(XRADIO_DBG_ERROR, "%s: too many SSIDs (%d)\n", 
+		scan_printk(XRADIO_DBG_ERROR, "%s: ssids is too much(%d)\n", 
 		            __func__, req->n_ssids);
 		return -EINVAL;
 	}
 
-	/* will be unlocked in xradio_scan_work() */
-	down(&hw_priv->scan.lock);
-	mutex_lock(&hw_priv->conf_mutex);
-
-	/* TODO by Icenowy: so strange function call */
-	frame.skb = ieee80211_probereq_get(hw, vif->addr, NULL, 0, 0);
+	frame.skb = ieee80211_probereq_get(hw, vif->addr, NULL, 0, req->ie_len);
 	if (!frame.skb) {
 		scan_printk(XRADIO_DBG_ERROR, "%s: ieee80211_probereq_get failed!\n", 
 		            __func__);
 		return -ENOMEM;
 	}
+
+	/* add info elements to probe frame (supported rates) */
+	if (req->ie_len)
+		memcpy(skb_put(frame.skb, req->ie_len), req->ie, req->ie_len);
 
 #ifdef ROAM_OFFLOAD
 	if (priv->join_status != XRADIO_JOIN_STATUS_STA) {
@@ -192,18 +195,20 @@ int xradio_hw_scan(struct ieee80211_hw *hw,
 	hw_priv->num_scanchannels = hw_priv->num_2g_channels + hw_priv->num_5g_channels;
 #endif /*ROAM_OFFLOAD*/
 
-	if (frame.skb) {
-		if (priv->if_id == 0)
-			xradio_remove_wps_p2p_ie(&frame);
-		ret = wsm_set_template_frame(hw_priv, &frame, priv->if_id);
-		if (ret) {
-			dev_kfree_skb(frame.skb);
-			mutex_unlock(&hw_priv->conf_mutex);
-			up(&hw_priv->scan.lock);
-			scan_printk(XRADIO_DBG_ERROR, "%s: wsm_set_template_frame failed: %d.\n",
-			             __func__, ret);
-			return ret;
-		}
+	/* will be unlocked in xradio_scan_work() */
+	down(&hw_priv->scan.lock);
+	mutex_lock(&hw_priv->conf_mutex);
+	
+	if (priv->if_id == 0)
+		xradio_remove_wps_p2p_ie(&frame);
+	ret = wsm_set_template_frame(hw_priv, &frame, priv->if_id);
+	if (ret) {
+		mutex_unlock(&hw_priv->conf_mutex);
+		up(&hw_priv->scan.lock);
+		dev_kfree_skb(frame.skb);
+		scan_printk(XRADIO_DBG_ERROR, "%s: wsm_set_template_frame failed: %d.\n",
+						__func__, ret);
+		return ret;
 	}
 
 	wsm_vif_lock_tx(priv);
@@ -218,7 +223,7 @@ int xradio_hw_scan(struct ieee80211_hw *hw,
 	hw_priv->scan.output_power = hw_priv->output_power;
 	hw_priv->scan.if_id = priv->if_id;
 	/* TODO:COMBO: Populate BIT4 in scanflags to decide on which MAC
-	 * address the SCAN request will be sent */
+		* address the SCAN request will be sent */
 
 	for (i = 0; i < req->n_ssids; ++i) {
 		struct wsm_ssid *dst = &hw_priv->scan.ssids[hw_priv->scan.n_ssids];
@@ -228,9 +233,10 @@ int xradio_hw_scan(struct ieee80211_hw *hw,
 		++hw_priv->scan.n_ssids;
 	}
 
-	/* MRK 5.5a */
-	dev_kfree_skb(frame.skb);
 	mutex_unlock(&hw_priv->conf_mutex);
+
+	if (frame.skb)
+		dev_kfree_skb(frame.skb);
 	queue_work(hw_priv->workqueue, &hw_priv->scan.work);
 
 	return 0;
@@ -248,8 +254,9 @@ int xradio_hw_sched_scan_start(struct ieee80211_hw *hw,
 		.frame_type = WSM_FRAME_TYPE_PROBE_REQUEST,
 	};
 	int i;
+	
 
-	scan_printk(XRADIO_DBG_OPS, "%s\n", __func__);
+	scan_printk(XRADIO_DBG_WARN, "Scheduled scan request-->.\n");
 	if (!priv->vif)
 		return -EINVAL;
 
@@ -267,7 +274,7 @@ int xradio_hw_sched_scan_start(struct ieee80211_hw *hw,
 	scan_printk(XRADIO_DBG_NIY, "[SCAN] Scan request for %d SSIDs.\n", 
 	            req->n_ssids);
 
-	if (req->n_ssids > hw->wiphy->max_scan_ssids) {
+	if (req->n_ssids > hw->wiphy->max_scan_ssids) [
 		scan_printk(XRADIO_DBG_ERROR, "%s: ssids is too much(%d)\n", 
 		            __func__, req->n_ssids);
 		return -EINVAL;
@@ -437,6 +444,9 @@ void xradio_scan_work(struct work_struct *work)
 
 	} else {
 		struct ieee80211_channel *first = *hw_priv->scan.curr;
+		bool passiveScan = first->flags & IEEE80211_CHAN_NO_IR;
+
+		//verify that all channels to be scanned are same band, active/passive & power
 		for (it = hw_priv->scan.curr + 1, i = 1;
 		     it != hw_priv->scan.end && i < WSM_SCAN_MAX_NUM_OF_CHANNELS;
 		     ++it, ++i) {
@@ -456,13 +466,13 @@ void xradio_scan_work(struct work_struct *work)
 			scan.maxTransmitRate = WSM_TRANSMIT_RATE_1;
 
 		/* TODO: Is it optimal? */
-		scan.numOfProbeRequests = (first->flags & IEEE80211_CHAN_NO_IR) ? 0 : 2;
+		scan.numOfProbeRequests = passiveScan ? 0 : 2;
 
 		scan.numOfSSIDs = hw_priv->scan.n_ssids;
 		scan.ssids = &hw_priv->scan.ssids[0];
 		scan.numOfChannels = it - hw_priv->scan.curr;
 		/* TODO: Is it optimal? */
-		scan.probeDelay = 100;
+		scan.probeDelay = 200;
 		/* It is not stated in WSM specification, however
 		 * FW team says that driver may not use FG scan
 		 * when joined. */
@@ -470,11 +480,11 @@ void xradio_scan_work(struct work_struct *work)
 			scan.scanType = WSM_SCAN_TYPE_BACKGROUND;
 			scan.scanFlags = WSM_SCAN_FLAG_FORCE_BACKGROUND;
 		}
-		/* MRK C90 */
-		scan.ch = kcalloc(scan.numOfChannels, sizeof(struct wsm_scan_ch), GFP_KERNEL);
+		scan.ch = kzalloc(sizeof(struct wsm_scan_ch) *
+				  (it - hw_priv->scan.curr), GFP_KERNEL);
 		if (!scan.ch) {
 			hw_priv->scan.status = -ENOMEM;
-			scan_printk(XRADIO_DBG_ERROR, "kcalloc for wsm_scan_ch failed.\n");
+			scan_printk(XRADIO_DBG_ERROR, "xr_kzalloc wsm_scan_ch failed.\n");
 			goto fail;
 		}
 		maxChannelTime = (scan.numOfSSIDs * scan.numOfProbeRequests *ProbeRequestTime) + 
@@ -482,30 +492,28 @@ void xradio_scan_work(struct work_struct *work)
 		maxChannelTime = (maxChannelTime < 35) ? 35 : maxChannelTime;
 		for (i = 0; i < scan.numOfChannels; ++i) {
 			scan.ch[i].number = hw_priv->scan.curr[i]->hw_value;
-
-
-				if (hw_priv->scan.curr[i]->flags & IEEE80211_CHAN_NO_IR) {
-					scan.ch[i].minChannelTime = 50;
-					scan.ch[i].maxChannelTime = 110;
-				} else {
-					scan.ch[i].minChannelTime = 15;
-					scan.ch[i].maxChannelTime = maxChannelTime;
-				}
-
-
+			/* min: time to channel switch if no responses, 
+			*  max: time to listen if transmissions are heard */
+			if (passiveScan) {
+				/* typical AP send beacons with 100TU = 102.4ms interval */
+				scan.ch[i].minChannelTime = 110;
+				scan.ch[i].maxChannelTime = 120;
+			} else {
+				scan.ch[i].minChannelTime = 15;
+				scan.ch[i].maxChannelTime = maxChannelTime;
+			}
 		}
 
-			if (!(first->flags & IEEE80211_CHAN_NO_IR) &&
-			    hw_priv->scan.output_power != first->max_power) {
-			    hw_priv->scan.output_power = first->max_power;
-				/* TODO:COMBO: Change after mac80211 implementation
-				* complete */
-				WARN_ON(wsm_set_output_power(hw_priv, hw_priv->scan.output_power * 10,
-				                             priv->if_id));
-			}
+		if (!passiveScan && hw_priv->scan.output_power != first->max_power) {
+			hw_priv->scan.output_power = first->max_power;
+			/* TODO:COMBO: Change after mac80211 implementation
+			* complete */
+			WARN_ON(wsm_set_output_power(hw_priv, hw_priv->scan.output_power * 10,
+											priv->if_id));
+		}
 
-			down(&hw_priv->scan.status_lock);
-			hw_priv->scan.status = xradio_scan_start(priv, &scan);
+		down(&hw_priv->scan.status_lock);
+		hw_priv->scan.status = xradio_scan_start(priv, &scan);
 
 		kfree(scan.ch);
 		if (WARN_ON(hw_priv->scan.status)) {
@@ -572,8 +580,7 @@ void xradio_sched_scan_work(struct work_struct *work)
 	memcpy(scan_ssid.ssid, priv->ssid, priv->ssid_length);
 	scan.ssids = &scan_ssid;
 
-	/* MRK C90 */
-	scan.ch = kcalloc(scan.numOfChannels, sizeof(struct wsm_scan_ch), false);
+	scan.ch = xr_kzalloc(sizeof(struct wsm_scan_ch[scan.numOfChannels]), false);
 	if (!scan.ch) {
 		scan_printk(XRADIO_DBG_ERROR, "xr_kzalloc wsm_scan_ch failed.\n");
 		hw_priv->scan.status = -ENOMEM;
@@ -615,7 +622,6 @@ void xradio_hw_sched_scan_stop(struct xradio_common *hw_priv)
 {
 	struct xradio_vif *priv = NULL;
 
-	scan_printk(XRADIO_DBG_OPS, "%s\n", __func__);
 	priv = xrwl_hwpriv_to_vifpriv(hw_priv,hw_priv->scan.if_id);
 	if (unlikely(!priv))
 		return;
@@ -881,7 +887,7 @@ void xradio_probe_work(struct work_struct *work)
 	if (!ret)
 		IEEE80211_SKB_CB(frame.skb)->flags |= IEEE80211_TX_STAT_ACK;
 
-		BUG_ON(xradio_queue_remove(queue, hw_priv->pending_frame_id));
+	BUG_ON(xradio_queue_remove(queue, hw_priv->pending_frame_id));
 
 	if (ret) {
 		hw_priv->scan.direct_probe = 0;

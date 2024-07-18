@@ -93,13 +93,6 @@
 		post-power-on-delay-ms = <200>;
 	};
 
-	xradio: sdio-wifi@1 {
-		// reg = <1>;
-		compatible = "xradio,xr819";
-		interrupt-parent = <&r_pio>;
-		interrupts = <1 0 IRQ_TYPE_LEVEL_LOW>; /* PM0 */
-		interrupt-names = "host-wake";
-	};
 };
 
 &cpu0 {
@@ -151,8 +144,15 @@
 	max-frequency = <25000000>;
 	bus-width = <4>;
 	non-removable;
-	broken-cd;
 	status = "okay";
+	xradio: sdio-wifi@1 {
+		reg = <1>;
+		compatible = "xradio,xr819";
+		interrupt-parent = <&r_pio>;
+		interrupts = <1 0 IRQ_TYPE_LEVEL_LOW>; /* PM0 */
+		interrupt-names = "host-wake";
+		local-mac-address = [dc 44 6d c0 ff ee];
+	};
 };
 
 &mmc2 {
